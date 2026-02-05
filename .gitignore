@@ -1,3 +1,5 @@
 .DS_Store
 .build/
 .swiftpm/
+Cursor Highlight.app/
+*.zip
