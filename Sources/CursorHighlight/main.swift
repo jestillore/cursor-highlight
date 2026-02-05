@@ -98,11 +98,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Event Monitors
 
     func setupEventMonitors() {
-        // Global: mouse movement
-        NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] event in
-            self?.updateCursorPosition()
-        }
-
         // Global: mouse down
         NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.highlightView.isMouseDown = true
@@ -148,8 +143,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func startAnimationTimer() {
         animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.updateCursorPosition()
             self?.highlightView.needsDisplay = true
         }
+        RunLoop.current.add(animationTimer!, forMode: .common)
     }
 
     // MARK: Actions
