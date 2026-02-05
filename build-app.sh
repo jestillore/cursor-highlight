@@ -44,6 +44,9 @@ cat > "$APP_DIR/Contents/Info.plist" << EOF
 </plist>
 EOF
 
+echo "Signing app bundle..."
+codesign --force --sign - "$APP_DIR"
+
 echo "Done! Created '$APP_DIR'"
 echo ""
 echo "To install: drag '$APP_DIR' into /Applications"
