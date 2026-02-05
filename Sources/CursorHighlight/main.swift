@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 
 // MARK: - Settings Keys
 
@@ -204,12 +205,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var animationTimer: Timer?
     var isOverlayVisible = true
     var settingsWindowController: SettingsWindowController?
+    var hotKeyRef: EventHotKeyRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let settings = Settings.load()
         setupOverlayWindow(settings: settings)
         setupStatusBar()
         setupEventMonitors()
+        registerHotKey()
         startAnimationTimer()
     }
 
@@ -274,21 +277,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.highlightView.isMouseDown = false
         }
 
-        // Global: key down (Alt+X)
-        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.modifierFlags.contains(.option) && event.charactersIgnoringModifiers == "x" {
-                self?.toggleOverlay()
-            }
-        }
-
-        // Local: key down (Escape and Alt+X when app is focused)
+        // Local: key down (Escape when app is focused)
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
                 self?.hideOverlay()
-                return nil
-            }
-            if event.modifierFlags.contains(.option) && event.charactersIgnoringModifiers == "x" {
-                self?.toggleOverlay()
                 return nil
             }
             return event
@@ -303,6 +295,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             y: mouseLocation.y - screen.frame.origin.y
         )
         highlightView.cursorPosition = windowPoint
+    }
+
+    // MARK: Global Hot Key (Carbon)
+
+    func registerHotKey() {
+        let hotKeyID = EventHotKeyID(signature: OSType(0x43484C54), id: 1) // "CHLT"
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        // Store a raw pointer to self so the C callback can reach us
+        let refcon = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, inEvent, refcon -> OSStatus in
+                guard let refcon = refcon else { return OSStatus(eventNotHandledErr) }
+                let delegate = Unmanaged<AppDelegate>.fromOpaque(refcon).takeUnretainedValue()
+                delegate.toggleOverlay()
+                return noErr
+            },
+            1,
+            &eventType,
+            refcon,
+            nil
+        )
+        // kVK_ANSI_X = 0x07, optionKey = 0x0800
+        RegisterEventHotKey(
+            UInt32(kVK_ANSI_X),
+            UInt32(optionKey),
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
     }
 
     // MARK: Animation
