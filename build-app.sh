@@ -3,7 +3,7 @@ set -e
 
 APP_NAME="Cursor Highlight"
 BUNDLE_ID="com.jestillore.cursor-highlight"
-VERSION="1.0.0"
+VERSION="1.1.0"
 BUILD_DIR=".build/release"
 APP_DIR="$APP_NAME.app"
 

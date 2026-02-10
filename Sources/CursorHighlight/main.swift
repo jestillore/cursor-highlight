@@ -70,6 +70,7 @@ class HighlightView: NSView {
     var activeRadius: CGFloat = 60
     var fillColor: NSColor = defaultColor
     let radiusSpeed: CGFloat = 4
+    var isActive = true
 
     func applySettings(_ settings: Settings) {
         fillColor = settings.color
@@ -80,6 +81,8 @@ class HighlightView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.clear(bounds)
+
+        guard isActive else { return }
 
         let targetRadius = isMouseDown ? activeRadius : normalRadius
         if currentRadius < targetRadius {
@@ -199,8 +202,8 @@ class SettingsWindowController: NSWindowController {
 // MARK: - AppDelegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var overlayWindow: NSWindow!
-    var highlightView: HighlightView!
+    var overlayWindows: [(window: NSWindow, view: HighlightView)] = []
+    var activeView: HighlightView?
     var statusItem: NSStatusItem!
     var animationTimer: Timer?
     var isOverlayVisible = true
@@ -209,34 +212,66 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let settings = Settings.load()
-        setupOverlayWindow(settings: settings)
+        setupOverlayWindows(settings: settings)
         setupStatusBar()
         setupEventMonitors()
         registerHotKey()
         startAnimationTimer()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
     }
 
-    // MARK: Overlay Window
+    // MARK: Overlay Windows
 
-    func setupOverlayWindow(settings: Settings) {
-        guard let screen = NSScreen.main else { return }
-        overlayWindow = NSWindow(
-            contentRect: screen.frame,
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-        overlayWindow.level = .screenSaver
-        overlayWindow.backgroundColor = .clear
-        overlayWindow.isOpaque = false
-        overlayWindow.hasShadow = false
-        overlayWindow.ignoresMouseEvents = true
-        overlayWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    func setupOverlayWindows(settings: Settings) {
+        for screen in NSScreen.screens {
+            let window = NSWindow(
+                contentRect: screen.frame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false
+            )
+            window.level = .screenSaver
+            window.backgroundColor = .clear
+            window.isOpaque = false
+            window.hasShadow = false
+            window.ignoresMouseEvents = true
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        highlightView = HighlightView(frame: screen.frame)
-        highlightView.applySettings(settings)
-        overlayWindow.contentView = highlightView
-        overlayWindow.orderFrontRegardless()
+            let view = HighlightView(frame: screen.frame)
+            view.applySettings(settings)
+            view.isActive = false
+            window.contentView = view
+            window.orderFrontRegardless()
+
+            overlayWindows.append((window: window, view: view))
+        }
+    }
+
+    @objc func screensChanged() {
+        let settings: Settings
+        if let view = overlayWindows.first?.view {
+            settings = Settings(
+                color: view.fillColor,
+                normalRadius: view.normalRadius,
+                activeRadius: view.activeRadius
+            )
+        } else {
+            settings = Settings.load()
+        }
+        for entry in overlayWindows {
+            entry.window.orderOut(nil)
+        }
+        overlayWindows.removeAll()
+        activeView = nil
+        setupOverlayWindows(settings: settings)
+        if !isOverlayVisible {
+            overlayWindows.forEach { $0.window.orderOut(nil) }
+        }
     }
 
     // MARK: Status Bar
@@ -269,12 +304,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupEventMonitors() {
         // Global: mouse down
         NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.highlightView.isMouseDown = true
+            self?.overlayWindows.forEach { $0.view.isMouseDown = true }
         }
 
         // Global: mouse up
         NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp]) { [weak self] _ in
-            self?.highlightView.isMouseDown = false
+            self?.overlayWindows.forEach { $0.view.isMouseDown = false }
         }
 
         // Local: key down (Escape when app is focused)
@@ -289,12 +324,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func updateCursorPosition() {
         let mouseLocation = NSEvent.mouseLocation
-        guard let screen = overlayWindow.screen ?? NSScreen.main else { return }
+
+        // Find which overlay window's screen contains the cursor
+        var targetEntry: (window: NSWindow, view: HighlightView)?
+        for entry in overlayWindows {
+            if entry.window.frame.contains(mouseLocation) {
+                targetEntry = entry
+                break
+            }
+        }
+
+        guard let active = targetEntry else { return }
+
+        // Transfer radius animation state for smooth transitions across screens
+        if let prev = activeView, prev !== active.view {
+            active.view.currentRadius = prev.currentRadius
+        }
+        activeView = active.view
+
+        // Convert to window-local coordinates
         let windowPoint = NSPoint(
-            x: mouseLocation.x - screen.frame.origin.x,
-            y: mouseLocation.y - screen.frame.origin.y
+            x: mouseLocation.x - active.window.frame.origin.x,
+            y: mouseLocation.y - active.window.frame.origin.y
         )
-        highlightView.cursorPosition = windowPoint
+        active.view.cursorPosition = windowPoint
+        active.view.isActive = true
+        active.view.needsDisplay = true
+
+        // Deactivate other views
+        for entry in overlayWindows where entry.view !== active.view {
+            if entry.view.isActive {
+                entry.view.isActive = false
+                entry.view.needsDisplay = true
+            }
+        }
     }
 
     // MARK: Global Hot Key (Carbon)
@@ -336,7 +399,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func startAnimationTimer() {
         animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             self?.updateCursorPosition()
-            self?.highlightView.needsDisplay = true
         }
         RunLoop.current.add(animationTimer!, forMode: .common)
     }
@@ -352,12 +414,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showOverlay() {
-        overlayWindow.orderFrontRegardless()
+        overlayWindows.forEach { $0.window.orderFrontRegardless() }
         isOverlayVisible = true
     }
 
     func hideOverlay() {
-        overlayWindow.orderOut(nil)
+        overlayWindows.forEach { $0.window.orderOut(nil) }
         isOverlayVisible = false
     }
 
@@ -367,13 +429,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+        let view = overlayWindows.first?.view
         let current = Settings(
-            color: highlightView.fillColor,
-            normalRadius: highlightView.normalRadius,
-            activeRadius: highlightView.activeRadius
+            color: view?.fillColor ?? defaultColor,
+            normalRadius: view?.normalRadius ?? defaultNormalRadius,
+            activeRadius: view?.activeRadius ?? defaultActiveRadius
         )
         settingsWindowController = SettingsWindowController(settings: current) { [weak self] newSettings in
-            self?.highlightView.applySettings(newSettings)
+            self?.overlayWindows.forEach { $0.view.applySettings(newSettings) }
         }
         settingsWindowController?.window?.delegate = self
         settingsWindowController?.showWindow(nil)
