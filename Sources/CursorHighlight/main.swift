@@ -282,9 +282,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             let size: CGFloat = 18
             let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+                // Highlight circle
+                NSColor.controlTextColor.withAlphaComponent(0.3).setFill()
+                let circleRect = NSRect(x: 2, y: 2, width: 14, height: 14)
+                NSBezierPath(ovalIn: circleRect).fill()
+
+                NSColor.controlTextColor.withAlphaComponent(0.6).setStroke()
+                let ring = NSBezierPath(ovalIn: circleRect)
+                ring.lineWidth = 1.0
+                ring.stroke()
+
+                // Small cursor arrow
+                let cursor = NSBezierPath()
+                let cx: CGFloat = 7.5
+                let cy: CGFloat = 13.0
+                cursor.move(to: NSPoint(x: cx, y: cy))
+                cursor.line(to: NSPoint(x: cx, y: cy - 10))
+                cursor.line(to: NSPoint(x: cx + 3, y: cy - 7))
+                cursor.line(to: NSPoint(x: cx + 5.5, y: cy - 11))
+                cursor.line(to: NSPoint(x: cx + 7, y: cy - 10))
+                cursor.line(to: NSPoint(x: cx + 4.5, y: cy - 6))
+                cursor.line(to: NSPoint(x: cx + 7.5, y: cy - 6))
+                cursor.close()
                 NSColor.controlTextColor.setFill()
-                let inset = rect.insetBy(dx: 3, dy: 3)
-                NSBezierPath(ovalIn: inset).fill()
+                cursor.fill()
+
                 return true
             }
             image.isTemplate = true

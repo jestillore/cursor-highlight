@@ -3,7 +3,7 @@ set -e
 
 APP_NAME="Cursor Highlight"
 BUNDLE_ID="com.jestillore.cursor-highlight"
-VERSION="1.1.0"
+VERSION="1.1.1"
 BUILD_DIR=".build/release"
 APP_DIR="$APP_NAME.app"
 
@@ -16,6 +16,7 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
 cp "$BUILD_DIR/CursorHighlight" "$APP_DIR/Contents/MacOS/"
+cp AppIcon.icns "$APP_DIR/Contents/Resources/"
 
 cat > "$APP_DIR/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -38,6 +39,8 @@ cat > "$APP_DIR/Contents/Info.plist" << EOF
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSUIElement</key>
     <true/>
 </dict>
@@ -47,7 +50,22 @@ EOF
 echo "Signing app bundle..."
 codesign --force --sign - "$APP_DIR"
 
-echo "Done! Created '$APP_DIR'"
+echo "Creating DMG..."
+DMG_NAME="CursorHighlight-${VERSION}.dmg"
+DMG_TEMP="dmg-temp"
+
+rm -rf "$DMG_TEMP" "$DMG_NAME"
+mkdir -p "$DMG_TEMP"
+cp -R "$APP_DIR" "$DMG_TEMP/"
+ln -s /Applications "$DMG_TEMP/Applications"
+
+hdiutil create -volname "$APP_NAME" \
+    -srcfolder "$DMG_TEMP" \
+    -ov -format UDZO \
+    "$DMG_NAME"
+
+rm -rf "$DMG_TEMP"
+
 echo ""
-echo "To install: drag '$APP_DIR' into /Applications"
-echo "To distribute: zip it with: zip -r 'Cursor Highlight.zip' '$APP_DIR'"
+echo "Done! Created '$DMG_NAME'"
+echo "Distribute: share '$DMG_NAME' — users open it and drag to Applications."
